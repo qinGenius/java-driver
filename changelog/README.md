@@ -4,6 +4,8 @@
 
 ### 4.6.0 (in progress)
 
+- [improvement] JAVA-2301: Introduce OSGi tests for the mapper
+- [improvement] JAVA-2658: Refactor OSGi tests
 - [bug] JAVA-2657: Add ability to specify the class loader to use for application-specific classpath resources
 - [improvement] JAVA-2435: Add automatic-module-names to the manifests
 - [new feature] JAVA-2054: Add now_in_seconds to protocol v5 query messages
