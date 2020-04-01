@@ -1047,6 +1047,10 @@ public class CCMBridge implements CCMAccess {
         cassandraConfiguration.remove("rpc_port");
         cassandraConfiguration.remove("thrift_prepared_statements_cache_size_mb");
       }
+      if (isMaterializedViewsSupported(cassandraVersion)) {
+        // enable materialized views
+        cassandraConfiguration.put("enable_materialized_views", true);
+      }
       final CCMBridge ccm =
           new CCMBridge(
               clusterName,
@@ -1089,7 +1093,12 @@ public class CCMBridge implements CCMAccess {
     }
 
     private static boolean isThriftSupported(VersionNumber cassandraVersion) {
-      return cassandraVersion.compareTo(VersionNumber.parse("4.0")) < 0;
+      // Thrift is removed from some pre-release 4.x versions, make the comparison work for those
+      return cassandraVersion.compareTo(VersionNumber.parse("4.0-a")) < 0;
+    }
+
+    private static boolean isMaterializedViewsSupported(VersionNumber cassandraVersion) {
+      return cassandraVersion.compareTo(VersionNumber.parse("4.0-a")) >= 0;
     }
 
     public int weight() {
