@@ -4,6 +4,7 @@
 
 ### 4.6.0 (in progress)
 
+- [new feature] JAVA-2718: Warn when the number of sessions exceeds a configurable threshold
 - [bug] JAVA-2711: Fix handling of UDT keys in the mapper
 - [improvement] JAVA-2631: Add getIndex() shortcuts to TableMetadata
 - [improvement] JAVA-2679: Add port information to QueryTrace and TraceEvent
