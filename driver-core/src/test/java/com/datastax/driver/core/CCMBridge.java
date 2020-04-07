@@ -1051,6 +1051,10 @@ public class CCMBridge implements CCMAccess {
         // enable materialized views
         cassandraConfiguration.put("enable_materialized_views", true);
       }
+      if (isSasiConfigEnablementRequired(cassandraVersion)) {
+        // enable SASI indexing in config (disabled by default in C* 4.0)
+        cassandraConfiguration.put("enable_sasi_indexes", true);
+      }
       final CCMBridge ccm =
           new CCMBridge(
               clusterName,
@@ -1098,6 +1102,10 @@ public class CCMBridge implements CCMAccess {
     }
 
     private static boolean isMaterializedViewsSupported(VersionNumber cassandraVersion) {
+      return cassandraVersion.nextStable().compareTo(VersionNumber.parse("4.0")) >= 0;
+    }
+
+    private static boolean isSasiConfigEnablementRequired(VersionNumber cassandraVersion) {
       return cassandraVersion.nextStable().compareTo(VersionNumber.parse("4.0")) >= 0;
     }
 
