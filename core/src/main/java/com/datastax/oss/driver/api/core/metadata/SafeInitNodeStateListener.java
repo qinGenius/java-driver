@@ -92,6 +92,7 @@ public class SafeInitNodeStateListener implements NodeStateListener {
     lock.writeLock().lock();
     try {
       sessionReady = true;
+      delegate.onSessionReady(session);
       if (replayInitEvents) {
         for (InitEvent event : initEvents) {
           event.invoke(delegate);
