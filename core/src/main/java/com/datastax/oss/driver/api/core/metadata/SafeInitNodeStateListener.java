@@ -23,71 +23,67 @@ import java.util.Objects;
 import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 import java.util.function.BiConsumer;
-import java.util.function.Function;
 import net.jcip.annotations.GuardedBy;
 
 /**
- * A node state listener that provides easier semantics if you're not interested in events emitted
- * during the initialization of the session.
+ * A node state listener wrapper that delays (or ignores) init events until after the session is
+ * ready.
  *
- * <p>By default, the driver emits node state events before the session is ready (see {@link
- * SessionAwareNodeStateListener} for a detailed explanation). This class is a wrapper that allows
- * you to delay the construction of the actual listener until the session is ready:
+ * <p>By default, the driver calls node state events, such as {@link #onUp} and {@link #onAdd},
+ * before the session is ready; see {@link NodeStateListener#onSessionReady(Session)} for a detailed
+ * explanation. This can make things complicated if your listener implementation needs the session
+ * to process those events.
+ *
+ * <p>This class wraps another implementation to shield it from those details:
  *
  * <pre>
- * public class SimpleListener implements NodeStateListener {
+ * NodeStateListener delegate = ... // your listener implementation
  *
- *   private final Session session;
+ * SafeInitNodeStateListener wrapper =
+ *     new SafeInitNodeStateListener(delegate, true);
  *
- *   public SimpleListener(Session session) {
- *     this.session = session;
- *   }
- *
- *   ... // implement other methods
- * }
- *
- * SafeInitNodeStateListenerWrapper wrapper =
- *     new SafeInitNodeStateListenerWrapper(SimpleListener::new, true);
- *
- * CqlSession session = CqlSession.builder().withNodeStateListener(wrapper).build();
+ * CqlSession session = CqlSession.builder()
+ *     .withNodeStateListener(wrapper)
+ *     .build();
  * </pre>
  *
- * The second constructor argument indicates what to do with the initialization-time events:
+ * With this setup, {@code delegate.onSessionReady} is guaranteed to be invoked first, before any
+ * other method. The second constructor argument indicates what to do with the method calls that
+ * were ignored before that:
  *
  * <ul>
- *   <li>if {@code true}, they will be recorded, and replayed to the child listener after it gets
- *       created. These calls are guaranteed to happen in the original order, and before any
- *       post-initialization events.
+ *   <li>if {@code true}, they are recorded, and replayed to {@code delegate} immediately after
+ *       {@link #onSessionReady}. They are guaranteed to happen in the original order, and before
+ *       any post-initialization events.
  *   <li>if {@code false}, they are discarded.
  * </ul>
+ *
+ * @since 4.6.0
  */
-public class SafeInitNodeStateListenerWrapper implements SessionAwareNodeStateListener {
+public class SafeInitNodeStateListener implements NodeStateListener {
 
-  private final Function<Session, NodeStateListener> childListenerFactory;
+  private final NodeStateListener delegate;
   private final boolean replayInitEvents;
 
-  // Write lock: recording init events or setting the child listener.
-  // Read lock: using the child listener
+  // Write lock: recording init events or setting sessionReady
+  // Read lock: reading init events or checking sessionReady
   private final ReadWriteLock lock = new ReentrantReadWriteLock();
 
   @GuardedBy("lock")
-  private NodeStateListener childListener;
+  private boolean sessionReady;
 
   @GuardedBy("lock")
-  private List<InitEvent> initEvents = new ArrayList<>();
+  private final List<InitEvent> initEvents = new ArrayList<>();
 
   /**
    * Creates a new instance.
    *
-   * @param childListenerFactory the callback that will be invoked to create the child listener once
-   *     the session is ready.
-   * @param replayInitEvents whether to record events during initialization, and replay them to the
-   *     child listener once it's created.
+   * @param delegate the wrapped listener, to which method invocations will be forwarded.
+   * @param replayInitEvents whether to record events during initialization and replay them to the
+   *     child listener once it's created, or just ignore them.
    */
-  public SafeInitNodeStateListenerWrapper(
-      @NonNull Function<Session, NodeStateListener> childListenerFactory,
-      boolean replayInitEvents) {
-    this.childListenerFactory = Objects.requireNonNull(childListenerFactory);
+  public SafeInitNodeStateListener(@NonNull NodeStateListener delegate, boolean replayInitEvents) {
+    this.delegate = Objects.requireNonNull(delegate);
     this.replayInitEvents = replayInitEvents;
   }
 
@@ -95,10 +91,10 @@ public class SafeInitNodeStateListenerWrapper implements SessionAwareNodeStateLi
   public void onSessionReady(@NonNull Session session) {
     lock.writeLock().lock();
     try {
-      childListener = childListenerFactory.apply(session);
+      sessionReady = true;
       if (replayInitEvents) {
         for (InitEvent event : initEvents) {
-          event.invoke(childListener);
+          event.invoke(delegate);
         }
       }
     } finally {
@@ -128,11 +124,11 @@ public class SafeInitNodeStateListenerWrapper implements SessionAwareNodeStateLi
 
   private void onEvent(Node node, InitEvent.Type eventType) {
 
-    // Cheap case: the child listener is already set, just delegate
+    // Cheap case: the session is ready, just delegate
     lock.readLock().lock();
     try {
-      if (childListener != null) {
-        eventType.listenerMethod.accept(childListener, node);
+      if (sessionReady) {
+        eventType.listenerMethod.accept(delegate, node);
         return;
       }
     } finally {
@@ -144,8 +140,8 @@ public class SafeInitNodeStateListenerWrapper implements SessionAwareNodeStateLi
       lock.writeLock().lock();
       try {
         // Must re-check because we completely released the lock for a short duration
-        if (childListener != null) {
-          eventType.listenerMethod.accept(childListener, node);
+        if (sessionReady) {
+          eventType.listenerMethod.accept(delegate, node);
         } else {
           initEvents.add(new InitEvent(node, eventType));
         }
@@ -157,14 +153,7 @@ public class SafeInitNodeStateListenerWrapper implements SessionAwareNodeStateLi
 
   @Override
   public void close() throws Exception {
-    lock.readLock().lock();
-    try {
-      if (childListener != null) {
-        childListener.close();
-      }
-    } finally {
-      lock.readLock().unlock();
-    }
+    delegate.close();
   }
 
   private static class InitEvent {

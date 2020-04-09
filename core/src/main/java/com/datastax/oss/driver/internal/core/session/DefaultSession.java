@@ -26,8 +26,6 @@ import com.datastax.oss.driver.api.core.metadata.EndPoint;
 import com.datastax.oss.driver.api.core.metadata.Metadata;
 import com.datastax.oss.driver.api.core.metadata.Node;
 import com.datastax.oss.driver.api.core.metadata.NodeState;
-import com.datastax.oss.driver.api.core.metadata.NodeStateListener;
-import com.datastax.oss.driver.api.core.metadata.SessionAwareNodeStateListener;
 import com.datastax.oss.driver.api.core.metrics.Metrics;
 import com.datastax.oss.driver.api.core.session.Request;
 import com.datastax.oss.driver.api.core.type.reflect.GenericType;
@@ -446,10 +444,7 @@ public class DefaultSession implements CqlSession {
               t);
         }
       }
-      NodeStateListener nodeStateListener = context.getNodeStateListener();
-      if (nodeStateListener instanceof SessionAwareNodeStateListener) {
-        ((SessionAwareNodeStateListener) nodeStateListener).onSessionReady(DefaultSession.this);
-      }
+      context.getNodeStateListener().onSessionReady(DefaultSession.this);
     }
 
     private void onNodeStateChanged(NodeStateEvent event) {
